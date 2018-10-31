@@ -1,0 +1,45 @@
+<p>使用Vue的过程中碰到的各种错误，统计记下来</p>
+<p><em>引入的组件如果有一个组件出现了问题，会导致在最终渲染生成的html许多资源注入失败</em></p>
+<h4 id="到底何为数据驱动？"><a href="#到底何为数据驱动？" class="headerlink" title="到底何为数据驱动？"></a>到底何为数据驱动？</h4><p>比如一个页面显示10个item，随着用户下滑，item应该随时更新，那么就可以有一个数组，不断地请求新数据，<br>当新的数据到达之后就更新，vue使用者只需要准确更新数据，而数据最后在视图层的展示则由vue去处理</p>
+<p>这种情况下适合使用vuex。</p>
+<p>既然如此，那么vuex store中应该存放随外界条件改变的<code>状态</code>，对于一些不会改变的变量则不适合用vuex store</p>
+<p>我也不知道这样理解对不对</p>
+<a id="more"></a>
+<p>对于频繁改变的数据存放到vuex store，那么对于不变的实例如果存放？</p>
+<ol>
+<li><p>父组件向子组件传递使用props</p>
+</li>
+<li><p>子组件向上传递使用事件</p>
+<p><em>子组件</em><post></post></p>
+<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">this</span>.$emit(<span class="string">'someEvent'</span>)</span><br></pre></td></tr></table></figure>
+<p><em>父组件<blog></blog></em></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&lt;Blog&gt;</span><br><span class="line">&lt;Post</span><br><span class="line">	@someEvent=&quot;handleSomeEvent&quot;</span><br><span class="line">	/&gt;</span><br><span class="line">&lt;/Blog&gt;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>对于没有父子关系的组件：</p>
+<ol>
+<li>如果数据只在初始化时发生改变，那么适合使用空<code>vue</code>来做<code>eventbus</code></li>
+<li>如果数据和视图进行了绑定，那么使用<code>Vuex</code>来追踪响应式变化</li>
+</ol>
+</li>
+</ol>
+<h4 id="父子组件的初始化顺序"><a href="#父子组件的初始化顺序" class="headerlink" title="父子组件的初始化顺序"></a>父子组件的初始化顺序</h4><p>使用props时，父子组件的初始化顺序到底是什么样的，如果子组件访问从父组件传递的数据时，父组件还未初始化，这样如何处理？</p>
+<p><em>之后添加</em></p>
+<h6 id="现在可以解答这个问题了"><a href="#现在可以解答这个问题了" class="headerlink" title="现在可以解答这个问题了"></a>现在可以解答这个问题了</h6><p>我在父子组件的不同生命周期上下了几个断点，最后得出的结论如下：</p>
+<ol>
+<li>created由App.vue顶层 开始，逐步传递到最深的子组件</li>
+<li>mounted从最深子组件开始，一直传递到顶层为止</li>
+<li>nextTick由最深子组件开始，一直传递到顶层为止</li>
+</ol>
+<p>父组件不创建就没有子组件的存在，没有父亲哪来儿子？</p>
+<p>创建之后的DOM要挂载到浏览器DOM树上，外层DOM基于内层DOM，毕竟内层是基石（强行理解）</p>
+<p>nextTick总感觉和冒泡一样，事件的传递由内层开始向外扩散</p>
+<p>这里只测试了父子组件之间的关系，并没有测试兄弟组件之间的顺序</p>
+<p>我在这里碰到了一个问题</p>
+<p>如果子组件需要父组件(App.vue)的一个变量，但父组件中此变量的生成必须在<code>App.vue</code>挂载到DOM之后才能获得，也就是需要在DOM节点上展开自定义元素，这样子组件必须在父组件<code>mounted</code>之后才能获得这个变量，但<code>mounted</code>从内到外，<code>nextTick</code>也是从内到外，无论如何子组件的都在前面先进行</p>
+<p>最后通过生命周期钩子和空<code>Vue</code>来做<code>EventBus</code>解决了这点</p>
+<p>父组件App.vue</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">mounted ()&#123;</span><br><span class="line">  this.ide = new IDE(&apos;DOMElement&apos;)//DOMElement必须在App.vue挂载完成之后才能获得</span><br><span class="line">  eventBus.$emit(&apos;init&apos;,&#123;myide:this.ide&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>子组件FileTree.vue</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">created ()&#123;</span><br><span class="line">  eventBus.$on(&apos;init&apos;,(data) =&gt;&#123;</span><br><span class="line">    this.ide = data.myide</span><br><span class="line">  &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<hr>
+<h4 id="计算属性"><a href="#计算属性" class="headerlink" title="计算属性"></a>计算属性</h4><p>关于<code>Vue</code>的计算属性，个人理解，<code>computed</code>相对于methods不同之处在于当<code>computed</code>中的<code>function</code>中依赖的外部变量变化时，这个函数会被调用<br>而<code>methods</code>中的函数由用户进行显式调用</p>
